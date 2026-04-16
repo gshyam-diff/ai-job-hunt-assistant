@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Resume RAG Chatbot</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Resume RAG Chatbot</h1>
+            <p class="subtitle">Upload your resume and ask questions about it</p>
+        </header>
+
+        <div id="upload-section" class="upload-section">
+            <div id="drop-zone" class="drop-zone">
+                <div class="drop-zone-content">
+                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <p>Drag & drop your resume PDF here</p>
+                    <p class="drop-zone-hint">or click to browse (max 10MB)</p>
+                </div>
+                <input type="file" id="file-input" accept=".pdf" hidden>
+            </div>
+            <div id="upload-status" class="upload-status hidden"></div>
+        </div>
+
+        <div id="suggestions-section" class="suggestions-section hidden">
+            <p class="suggestions-label">Try asking:</p>
+            <div id="suggestions-container" class="suggestions-container"></div>
+        </div>
+
+        <div id="chat-section" class="chat-section hidden">
+            <div id="messages" class="messages"></div>
+
+            <div class="input-area">
+                <input type="text" id="chat-input" placeholder="Ask a question about the resume..." autocomplete="off">
+                <button id="send-btn" disabled>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

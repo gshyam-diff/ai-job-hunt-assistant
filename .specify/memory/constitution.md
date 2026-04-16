@@ -1,50 +1,52 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!-- Sync Impact Report
+  Version change: 0.0.0 → 1.0.0
+  Modified principles: N/A (initial creation)
+  Added sections: Core Principles (5), Privacy & Data Handling, Development Workflow, Governance
+  Removed sections: None
+  Templates requiring updates: ✅ plan-template.md (aligned), ✅ spec-template.md (aligned), ✅ tasks-template.md (aligned)
+  Follow-up TODOs: None
+-->
+
+# Resume RAG Chatbot Constitution
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Privacy-First
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+All resume data MUST be processed locally. No resume content is sent to external services beyond the LLM API call required for answer generation. Uploaded files MUST NOT be persisted beyond the active session unless the user explicitly opts in. Temporary files MUST be cleaned up on session end.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### II. Grounded Answers Only
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+Every chatbot response MUST be grounded in the actual content of the uploaded resume. The system MUST NOT hallucinate or fabricate information not present in the document. When the resume lacks information to answer a query, the system MUST clearly state that the information is not available in the provided resume.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### III. Simplicity
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+Prefer minimal dependencies and straightforward architecture. A single-page web application with a Python backend is the target. Avoid over-engineering: no microservices, no external databases, no complex deployment pipelines. The entire application MUST be runnable with a single command.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+### IV. Accuracy Over Speed
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+Retrieval quality takes priority over response latency. Chunk sizing, embedding quality, and retrieval strategy MUST be optimized for correctness of answers. Performance optimization is secondary to answer accuracy.
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+### V. User Experience
+
+The interface MUST be intuitive: upload a resume, ask questions, get answers. No configuration required from the user beyond providing an API key. Error messages MUST be clear and actionable. The system MUST provide visual feedback during processing (upload progress, thinking indicators).
+
+## Privacy & Data Handling
+
+- Resume files MUST be processed in-memory or in temporary storage only
+- No analytics or tracking of resume content
+- API keys MUST be stored client-side only and never logged
+- The application MUST work without any user account or authentication
+
+## Development Workflow
+
+- All code changes MUST be tested manually before marking complete
+- The application MUST start with a single command (`python app.py` or equivalent)
+- Dependencies MUST be pinned in a requirements file
+- Code MUST follow standard Python formatting (PEP 8)
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+This constitution governs all development decisions for the Resume RAG Chatbot project. Any deviation from these principles MUST be explicitly justified. The constitution may be amended with documented rationale and version bump.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 1.0.0 | **Ratified**: 2026-04-16 | **Last Amended**: 2026-04-16
