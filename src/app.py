@@ -1,6 +1,13 @@
 import os
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# Load .env from parent directory
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(env_path)
 
 from flask import Flask, request, jsonify, render_template
 
@@ -9,6 +16,10 @@ from pdf_processor import extract_text, chunk_text
 from embeddings import TFIDFIndex
 from retriever import retrieve
 from chat import generate_answer, generate_suggestions
+from job_search import search_jobs, format_salary
+from job_rater import rate_jobs
+from tailor import tailor_resume, cover_letter, skill_gap
+from recruiter import draft_outreach
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE_BYTES
@@ -19,6 +30,7 @@ state = {
     "index": None,
     "conversation": [],
     "suggestions": [],
+    "jobs": {},  # id -> job dict (enriched with rating)
 }
 
 
@@ -27,6 +39,22 @@ def reset_state():
     state["index"] = None
     state["conversation"] = []
     state["suggestions"] = []
+    state["jobs"] = {}
+
+
+def _require_resume():
+    """Return (error_response, status) or (None, None) if resume is loaded."""
+    if state["resume"] is None:
+        return jsonify({"error": "Please upload a resume first"}), 400
+    return None, None
+
+
+def _get_job(job_id: str):
+    """Fetch job from state by id; return (job, error_response, status)."""
+    job = state["jobs"].get(job_id)
+    if not job:
+        return None, jsonify({"error": "Job not found. Re-run the search."}), 404
+    return job, None, None
 
 
 @app.route("/")
@@ -123,6 +151,99 @@ def chat():
 @app.route("/suggestions", methods=["GET"])
 def suggestions():
     return jsonify({"suggestions": state["suggestions"]})
+
+
+@app.route("/jobs", methods=["POST"])
+def jobs_search():
+    err, status = _require_resume()
+    if err:
+        return err, status
+
+    data = request.get_json() or {}
+    query = (data.get("query") or "").strip()
+    location = (data.get("location") or "").strip()
+    is_remote = bool(data.get("is_remote"))
+
+    if not query:
+        return jsonify({"error": "Please provide a search query (e.g. 'senior python engineer')."}), 400
+
+    try:
+        jobs = search_jobs(query=query, location=location, is_remote=is_remote)
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"error": f"Job search failed: {e.__class__.__name__}: {e}"}), 500
+
+    if not jobs:
+        return jsonify({"jobs": [], "message": "No jobs found. Try a broader query or different location."})
+
+    resume_text = state["resume"]["raw_text"]
+    ratings = rate_jobs(jobs, resume_text)
+
+    # Merge rating into each job and store in state
+    enriched = []
+    for j in jobs:
+        r = ratings.get(j["id"], {})
+        j["rating"] = {
+            "score": r.get("score", 5),
+            "rationale": r.get("rationale", ""),
+            "strengths": r.get("strengths", []),
+            "gaps": r.get("gaps", []),
+        }
+        j["salary_display"] = format_salary(j)
+        state["jobs"][j["id"]] = j
+        enriched.append(j)
+
+    # Sort by rating desc
+    enriched.sort(key=lambda x: x["rating"]["score"], reverse=True)
+
+    return jsonify({"jobs": enriched, "count": len(enriched)})
+
+
+@app.route("/jobs/<job_id>/tailor", methods=["POST"])
+def jobs_tailor(job_id):
+    err, status = _require_resume()
+    if err:
+        return err, status
+    job, err, status = _get_job(job_id)
+    if err:
+        return err, status
+    content = tailor_resume(state["resume"]["raw_text"], job)
+    return jsonify({"content": content, "format": "markdown"})
+
+
+@app.route("/jobs/<job_id>/cover-letter", methods=["POST"])
+def jobs_cover_letter(job_id):
+    err, status = _require_resume()
+    if err:
+        return err, status
+    job, err, status = _get_job(job_id)
+    if err:
+        return err, status
+    content = cover_letter(state["resume"]["raw_text"], job)
+    return jsonify({"content": content, "format": "text"})
+
+
+@app.route("/jobs/<job_id>/gap", methods=["POST"])
+def jobs_gap(job_id):
+    err, status = _require_resume()
+    if err:
+        return err, status
+    job, err, status = _get_job(job_id)
+    if err:
+        return err, status
+    content = skill_gap(state["resume"]["raw_text"], job)
+    return jsonify({"content": content, "format": "markdown"})
+
+
+@app.route("/jobs/<job_id>/outreach", methods=["POST"])
+def jobs_outreach(job_id):
+    err, status = _require_resume()
+    if err:
+        return err, status
+    job, err, status = _get_job(job_id)
+    if err:
+        return err, status
+    outreach = draft_outreach(job, state["resume"]["raw_text"])
+    return jsonify(outreach)
 
 
 if __name__ == "__main__":

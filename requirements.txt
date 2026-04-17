@@ -4,3 +4,4 @@ anthropic==0.52.0
 scikit-learn==1.6.1
 numpy==2.2.4
 gunicorn==23.0.0
+python-jobspy==1.1.75

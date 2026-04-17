@@ -6,5 +6,11 @@ TOP_K = 3
 MAX_FILE_SIZE_MB = 10
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 ALLOWED_EXTENSIONS = {"pdf"}
-ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
+ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+# Job search defaults
+JOB_SITES = ["indeed", "linkedin", "google"]
+JOB_RESULTS_WANTED = 15
+JOB_HOURS_OLD = 72
+JOB_COUNTRY = "USA"

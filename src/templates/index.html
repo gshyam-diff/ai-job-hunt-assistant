@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resume RAG Chatbot</title>
+    <title>Resume Copilot — Chat, Search Jobs, Tailor</title>
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Resume RAG Chatbot</h1>
-            <p class="subtitle">Upload your resume and ask questions about it</p>
+            <h1>Resume Copilot</h1>
+            <p class="subtitle">Upload your resume. Ask questions. Find jobs. Tailor applications.</p>
         </header>
 
         <div id="upload-section" class="upload-section">
@@ -29,21 +29,58 @@
             <div id="upload-status" class="upload-status hidden"></div>
         </div>
 
-        <div id="suggestions-section" class="suggestions-section hidden">
-            <p class="suggestions-label">Try asking:</p>
-            <div id="suggestions-container" class="suggestions-container"></div>
+        <!-- Mode tabs: shown after upload -->
+        <div id="mode-tabs" class="mode-tabs hidden">
+            <button class="tab-btn active" data-mode="chat">Chat with Resume</button>
+            <button class="tab-btn" data-mode="jobs">Find & Tailor Jobs</button>
         </div>
 
-        <div id="chat-section" class="chat-section hidden">
-            <div id="messages" class="messages"></div>
+        <!-- CHAT MODE -->
+        <div id="chat-mode" class="mode-panel">
+            <div id="suggestions-section" class="suggestions-section hidden">
+                <p class="suggestions-label">Try asking:</p>
+                <div id="suggestions-container" class="suggestions-container"></div>
+            </div>
 
-            <div class="input-area">
-                <input type="text" id="chat-input" placeholder="Ask a question about the resume..." autocomplete="off">
-                <button id="send-btn" disabled>
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                    </svg>
-                </button>
+            <div id="chat-section" class="chat-section hidden">
+                <div id="messages" class="messages"></div>
+                <div class="input-area">
+                    <input type="text" id="chat-input" placeholder="Ask a question about the resume..." autocomplete="off">
+                    <button id="send-btn" disabled>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- JOBS MODE -->
+        <div id="jobs-mode" class="mode-panel hidden">
+            <div class="jobs-search-bar">
+                <input type="text" id="job-query" placeholder="Role, e.g. senior python engineer" autocomplete="off">
+                <input type="text" id="job-location" placeholder="Location (optional)" autocomplete="off">
+                <label class="remote-toggle">
+                    <input type="checkbox" id="job-remote"> Remote only
+                </label>
+                <button id="search-jobs-btn">Search Jobs</button>
+            </div>
+            <div id="jobs-status" class="jobs-status hidden"></div>
+            <div id="jobs-list" class="jobs-list"></div>
+        </div>
+    </div>
+
+    <!-- Action Modal -->
+    <div id="modal-overlay" class="modal-overlay hidden">
+        <div class="modal">
+            <div class="modal-header">
+                <h2 id="modal-title">Title</h2>
+                <button id="modal-close" aria-label="Close">&times;</button>
+            </div>
+            <div id="modal-body" class="modal-body"></div>
+            <div class="modal-footer">
+                <button id="modal-copy" class="btn-secondary">Copy</button>
+                <button id="modal-dismiss" class="btn-primary">Close</button>
             </div>
         </div>
     </div>
