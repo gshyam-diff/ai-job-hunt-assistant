@@ -82,6 +82,19 @@ async function uploadFile(file) {
         if (data.suggestions && data.suggestions.length > 0) {
             showSuggestions(data.suggestions);
         }
+
+        // Auto-fill inferred role and search jobs
+        if (data.inferred_role) {
+            // Switch to jobs tab
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.mode-panel').forEach(p => p.classList.add('hidden'));
+            document.querySelector('button[data-mode="jobs"]').classList.add('active');
+            document.getElementById('jobs-mode').classList.remove('hidden');
+
+            // Pre-fill and auto-search
+            jobQueryInput.value = data.inferred_role;
+            searchJobs();
+        }
     } catch (err) {
         showStatus(uploadStatus, 'Network error. Is the server running?', 'error');
     }

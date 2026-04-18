@@ -16,6 +16,7 @@ from pdf_processor import extract_text, chunk_text
 from embeddings import TFIDFIndex
 from retriever import retrieve
 from chat import generate_answer, generate_suggestions
+from resume_analyzer import analyze_resume
 from job_search import search_jobs, format_salary
 from job_rater import rate_jobs
 from tailor import tailor_resume, cover_letter, skill_gap
@@ -107,10 +108,14 @@ def upload():
     suggestions = generate_suggestions(raw_text)
     state["suggestions"] = suggestions
 
+    analysis = analyze_resume(raw_text)
+    inferred_role = analysis.get("job_titles", ["Software Engineer"])[0]
+
     return jsonify({
         "message": f"Resume '{file.filename}' uploaded successfully",
         "chunks": len(chunks),
         "suggestions": suggestions,
+        "inferred_role": inferred_role,
     })
 
 
