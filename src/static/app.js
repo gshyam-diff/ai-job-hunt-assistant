@@ -305,7 +305,34 @@ async function runJobAction(action, jobId, job) {
     currentJob = job;
     
     if (action === 'view-desc') {
-        openModal(`Job Description — ${job.title}`, job.description || 'No description available.');
+        if (job.description && job.description.trim().length > 10) {
+            openModal(`Job Description — ${job.title}`, job.description, 'markdown');
+        } else {
+            // LinkedIn and some other sites block description scraping
+            const site = (job.site || '').toLowerCase();
+            const applyUrl = job.job_url || '';
+            const siteNote = site === 'linkedin'
+                ? 'LinkedIn blocks automated description fetching.'
+                : site === 'glassdoor'
+                ? 'Glassdoor requires login to fetch descriptions.'
+                : 'This job board does not provide descriptions via scraping.';
+
+            modalTitle.textContent = `Job Description — ${job.title}`;
+            modalBody.innerHTML = `
+                <div style="text-align:center; padding: 1.5rem 0;">
+                    <p style="font-size:2rem; margin-bottom:0.75rem;">🔒</p>
+                    <p style="color:var(--text-primary); font-weight:600; margin-bottom:0.5rem;">${siteNote}</p>
+                    <p style="color:var(--text-secondary); margin-bottom:1.5rem;">
+                        View the full description directly on <strong>${job.site || 'the job board'}</strong>.
+                    </p>
+                    ${applyUrl ? `<a href="${esc(applyUrl)}" target="_blank" rel="noopener" class="btn-primary" style="display:inline-flex; text-decoration:none;">
+                        Open Job on ${job.site || 'Site'} →
+                    </a>` : ''}
+                </div>
+            `;
+            modalBody.dataset.copyText = '';
+            modalOverlay.classList.remove('hidden');
+        }
         return;
     }
 
@@ -419,9 +446,9 @@ modalCopy.addEventListener('click', () => {
     });
 });
 
-function openModal(title, body) {
+function openModal(title, body, format = 'text') {
     modalTitle.textContent = title;
-    setModalBody(body, 'text');
+    setModalBody(body, format);
     modalOverlay.classList.remove('hidden');
 }
 function closeModal() { 

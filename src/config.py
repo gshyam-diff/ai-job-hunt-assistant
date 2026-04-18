@@ -23,7 +23,7 @@ else:
     print("⚠️  ANTHROPIC_API_KEY is not set — rating will be unavailable")
 
 # Job search defaults
-JOB_SITES = ["indeed", "linkedin", "google"]
+JOB_SITES = ["indeed", "google"]
 JOB_RESULTS_WANTED = 15
 JOB_HOURS_OLD = 72
 JOB_COUNTRY = "USA"
