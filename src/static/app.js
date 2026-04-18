@@ -29,6 +29,7 @@ const modalCopy = document.getElementById('modal-copy');
 
 let isProcessing = false;
 let currentJob = null; // Track current job for actions
+const jobsMap = new Map(); // Store all job objects by ID — avoids JSON-in-HTML-attribute bugs
 
 // ===== Upload =====
 dropZone.addEventListener('click', () => fileInput.click());
@@ -214,7 +215,11 @@ async function searchJobs() {
         }
 
         showStatus(jobsStatus, `Found ${data.count} jobs — sorted by match score.`, 'success');
-        data.jobs.forEach((job) => jobsList.appendChild(renderJobCard(job)));
+        jobsMap.clear();
+        data.jobs.forEach((job) => {
+            jobsMap.set(job.id, job); // Store full job object safely
+            jobsList.appendChild(renderJobCard(job));
+        });
     } catch (err) {
         showStatus(jobsStatus, 'Network error searching jobs.', 'error');
     }
@@ -258,18 +263,20 @@ function renderJobCard(job) {
             ${gaps ? `<div><strong>Gaps</strong><ul>${gaps}</ul></div>` : ''}
         </div>` : ''}
         <div class="job-actions">
-            <button class="btn-action" data-action="view-desc" data-id="${job.id}" style="cursor: pointer;">📄 View Description</button>
+            <button class="btn-action" data-action="view-desc" data-id="${job.id}">📄 View Description</button>
             ${job.job_url ? `<a class="btn-primary" href="${esc(job.job_url)}" target="_blank" rel="noopener">Apply →</a>` : ''}
-            <button class="btn-action" data-action="tailor" data-id="${job.id}" data-job='${JSON.stringify(job).replace(/'/g, "&apos;")}'>Tailor Resume</button>
-            <button class="btn-action" data-action="outreach" data-id="${job.id}" data-job='${JSON.stringify(job).replace(/'/g, "&apos;")}'>Draft Outreach Email</button>
-            <button class="btn-action" data-action="gap" data-id="${job.id}" data-job='${JSON.stringify(job).replace(/'/g, "&apos;")}'>Skill Gap Analysis</button>
-            <button class="btn-action" data-action="cover-letter" data-id="${job.id}" data-job='${JSON.stringify(job).replace(/'/g, "&apos;")}'>Cover Letter</button>
+            <button class="btn-action" data-action="tailor" data-id="${job.id}">Tailor Resume</button>
+            <button class="btn-action" data-action="outreach" data-id="${job.id}">Draft Outreach Email</button>
+            <button class="btn-action" data-action="gap" data-id="${job.id}">Skill Gap Analysis</button>
+            <button class="btn-action" data-action="cover-letter" data-id="${job.id}">Cover Letter</button>
         </div>
     `;
 
     card.querySelectorAll('button.btn-action').forEach((btn) => {
-        const job_data = btn.dataset.job ? JSON.parse(btn.dataset.job) : job;
-        btn.addEventListener('click', () => runJobAction(btn.dataset.action, btn.dataset.id, job_data));
+        btn.addEventListener('click', () => {
+            const job_data = jobsMap.get(btn.dataset.id) || job; // Always look up from Map
+            runJobAction(btn.dataset.action, btn.dataset.id, job_data);
+        });
     });
 
     return card;
