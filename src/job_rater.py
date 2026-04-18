@@ -64,31 +64,49 @@ def rate_jobs(jobs: list[dict], resume_text: str) -> dict[str, dict]:
         f"---\n\nJobs to rate (array of {len(job_payload)}):\n{json.dumps(job_payload)}"
     )
 
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    resp = client.messages.create(
-        model=ANTHROPIC_MODEL,
-        max_tokens=2048,
-        system=RATER_SYSTEM,
-        messages=[{"role": "user", "content": user_msg}],
-    )
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        resp = client.messages.create(
+            model=ANTHROPIC_MODEL,
+            max_tokens=2048,
+            system=RATER_SYSTEM,
+            messages=[{"role": "user", "content": user_msg}],
+        )
 
-    ratings = _extract_json_array(resp.content[0].text)
+        ratings = _extract_json_array(resp.content[0].text)
+    except Exception as e:
+        print(f"Error rating jobs: {e}")
+        # Fallback: return neutral ratings on error
+        return {
+            j["id"]: {
+                "score": 5,
+                "rationale": f"Rating service temporarily unavailable.",
+                "strengths": ["Check job description for details"],
+                "gaps": ["Unable to analyze"],
+            }
+            for j in jobs
+        }
+
     out = {}
     for r in ratings:
         jid = r.get("id")
         if not jid:
             continue
         out[jid] = {
-            "score": int(r.get("score", 5)),
+            "score": r.get("score", 5),
             "rationale": r.get("rationale", ""),
-            "strengths": r.get("strengths", []) or [],
-            "gaps": r.get("gaps", []) or [],
+            "strengths": r.get("strengths", []),
+            "gaps": r.get("gaps", []),
         }
 
-    # Ensure every job has a rating (fill missing with neutral)
+    # For any job not rated, give fallback
     for j in jobs:
-        out.setdefault(
-            j["id"],
-            {"score": 5, "rationale": "Could not rate this job.", "strengths": [], "gaps": []},
-        )
+        if j["id"] not in out:
+            out[j["id"]] = {
+                "score": 5,
+                "rationale": "Rating could not be generated.",
+                "strengths": ["Review job description"],
+                "gaps": ["Unable to assess"],
+            }
+
     return out

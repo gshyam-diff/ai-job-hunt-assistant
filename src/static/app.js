@@ -28,6 +28,7 @@ const modalDismiss = document.getElementById('modal-dismiss');
 const modalCopy = document.getElementById('modal-copy');
 
 let isProcessing = false;
+let currentJob = null; // Track current job for actions
 
 // ===== Upload =====
 dropZone.addEventListener('click', () => fileInput.click());
@@ -257,16 +258,18 @@ function renderJobCard(job) {
             ${gaps ? `<div><strong>Gaps</strong><ul>${gaps}</ul></div>` : ''}
         </div>` : ''}
         <div class="job-actions">
+            <button class="btn-action" data-action="view-desc" data-id="${job.id}" style="cursor: pointer;">📄 View Description</button>
             ${job.job_url ? `<a class="btn-primary" href="${esc(job.job_url)}" target="_blank" rel="noopener">Apply →</a>` : ''}
-            <button class="btn-action" data-action="tailor" data-id="${job.id}">Tailor Resume</button>
-            <button class="btn-action" data-action="outreach" data-id="${job.id}">Draft Outreach Email</button>
-            <button class="btn-action" data-action="gap" data-id="${job.id}">Skill Gap Analysis</button>
-            <button class="btn-action" data-action="cover-letter" data-id="${job.id}">Cover Letter</button>
+            <button class="btn-action" data-action="tailor" data-id="${job.id}" data-job='${JSON.stringify(job).replace(/'/g, "&apos;")}'>Tailor Resume</button>
+            <button class="btn-action" data-action="outreach" data-id="${job.id}" data-job='${JSON.stringify(job).replace(/'/g, "&apos;")}'>Draft Outreach Email</button>
+            <button class="btn-action" data-action="gap" data-id="${job.id}" data-job='${JSON.stringify(job).replace(/'/g, "&apos;")}'>Skill Gap Analysis</button>
+            <button class="btn-action" data-action="cover-letter" data-id="${job.id}" data-job='${JSON.stringify(job).replace(/'/g, "&apos;")}'>Cover Letter</button>
         </div>
     `;
 
     card.querySelectorAll('button.btn-action').forEach((btn) => {
-        btn.addEventListener('click', () => runJobAction(btn.dataset.action, btn.dataset.id, job));
+        const job_data = btn.dataset.job ? JSON.parse(btn.dataset.job) : job;
+        btn.addEventListener('click', () => runJobAction(btn.dataset.action, btn.dataset.id, job_data));
     });
 
     return card;
@@ -276,7 +279,29 @@ function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
 
+function getFilename(job, action) {
+    // Format: Role_CompanyName_Action.pdf
+    const role = (job.title || 'Job').replace(/[^a-zA-Z0-9]/g, '_');
+    const company = (job.company || 'Company').replace(/[^a-zA-Z0-9]/g, '_');
+    
+    const actionLabel = {
+        'tailor': 'Tailored_Resume',
+        'outreach': 'Outreach_Email',
+        'gap': 'Skill_Gap_Analysis',
+        'cover-letter': 'Cover_Letter',
+    }[action] || action;
+    
+    return `${role}_${company}_${actionLabel}.pdf`;
+}
+
 async function runJobAction(action, jobId, job) {
+    currentJob = job;
+    
+    if (action === 'view-desc') {
+        openModal(`Job Description — ${job.title}`, job.description || 'No description available.');
+        return;
+    }
+
     const titles = {
         'tailor': `Tailored Resume — ${job.title}`,
         'outreach': `Outreach Email — ${job.company}`,
@@ -294,7 +319,7 @@ async function runJobAction(action, jobId, job) {
             const recruiterLink = data.linkedin_recruiter_url
                 ? `<p><a href="${esc(data.linkedin_recruiter_url)}" target="_blank" rel="noopener">🔍 Find recruiter on LinkedIn (Google search)</a></p>` : '';
             const hmLink = data.linkedin_hiring_manager_url
-                ? `<p><a href="${esc(data.linkedin_hiring_manager_url)}" target="_blank" rel="noopener">🔍 Find hiring manager on LinkedIn</a></p>` : '';
+                ? `<a href="${esc(data.linkedin_hiring_manager_url)}" target="_blank" rel="noopener">🔍 Find hiring manager on LinkedIn</a></p>` : '';
             const emails = data.emails_found
                 ? `<p><strong>Emails mentioned in listing:</strong> ${esc(data.emails_found)}</p>` : '';
             const html = `
@@ -308,9 +333,70 @@ async function runJobAction(action, jobId, job) {
             modalBody.dataset.copyText = `Subject: ${data.subject}\n\n${data.body}`;
         } else {
             setModalBody(data.content, data.format || 'markdown');
+            modalBody.dataset.copyText = data.content;
         }
+        
+        // Show PDF download button
+        updateModalWithPDF(action, data);
     } catch (err) {
         setModalBody('Network error.', 'text');
+    }
+}
+
+function updateModalWithPDF(action, data) {
+    const pdfBtn = document.createElement('button');
+    pdfBtn.className = 'btn-primary';
+    pdfBtn.textContent = '📥 Download PDF';
+    pdfBtn.style.marginRight = '0.5rem';
+    pdfBtn.addEventListener('click', () => downloadPDF(action, data));
+    modalCopy.parentElement.insertBefore(pdfBtn, modalCopy);
+}
+
+async function downloadPDF(action, data) {
+    try {
+        const { jsPDF } = window.jspdf;
+        if (!jsPDF) {
+            alert('PDF library not loaded. Please refresh the page.');
+            return;
+        }
+
+        const doc = new jsPDF();
+        const pageWidth = doc.internal.pageSize.getWidth();
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const margin = 15;
+        const maxWidth = pageWidth - 2 * margin;
+
+        // Title
+        doc.setFontSize(16);
+        doc.text(currentJob.title, margin, margin);
+        
+        // Company & meta
+        doc.setFontSize(12);
+        doc.setTextColor(100);
+        doc.text(`${currentJob.company} | ${currentJob.location || 'Location N/A'}`, margin, margin + 10);
+        
+        // Content
+        doc.setFontSize(11);
+        doc.setTextColor(0);
+        let yPos = margin + 25;
+        
+        const content = data.content || data.body || 'No content generated';
+        const lines = doc.splitTextToSize(content, maxWidth);
+        
+        lines.forEach((line) => {
+            if (yPos > pageHeight - margin) {
+                doc.addPage();
+                yPos = margin;
+            }
+            doc.text(line, margin, yPos);
+            yPos += 7;
+        });
+
+        const filename = getFilename(currentJob, action);
+        doc.save(filename);
+    } catch (err) {
+        console.error('PDF download error:', err);
+        alert('Failed to download PDF. Make sure jsPDF is loaded.');
     }
 }
 
@@ -331,7 +417,12 @@ function openModal(title, body) {
     setModalBody(body, 'text');
     modalOverlay.classList.remove('hidden');
 }
-function closeModal() { modalOverlay.classList.add('hidden'); }
+function closeModal() { 
+    modalOverlay.classList.add('hidden'); 
+    // Remove PDF button if it exists
+    const pdfBtn = document.querySelector('[data-pdf-btn]');
+    if (pdfBtn) pdfBtn.remove();
+}
 
 function setModalBody(content, format) {
     if (format === 'markdown') {
