@@ -1,4 +1,10 @@
 import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env with override to ensure we get fresh value
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(env_path, override=True)
 
 CHUNK_SIZE = 500
 CHUNK_OVERLAP = 100
@@ -8,6 +14,12 @@ MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 ALLOWED_EXTENSIONS = {"pdf"}
 ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+# Debug: Print if key is set
+if not ANTHROPIC_API_KEY:
+    print("WARNING: ANTHROPIC_API_KEY is not set in environment or .env file!")
+else:
+    print(f"✓ ANTHROPIC_API_KEY loaded: {ANTHROPIC_API_KEY[:20]}...")
 
 # Job search defaults
 JOB_SITES = ["indeed", "linkedin", "google"]
