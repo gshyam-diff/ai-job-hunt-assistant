@@ -1,0 +1,65 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║                     RESUME COPILOT - SECURITY QUICK REF                    ║
+║                      🔒 GUARDRAILS ACTIVE - TESTING PHASE                  ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🚨 GOLDEN RULE: NEVER PRINT FULL API KEYS TO LOGS OR CONSOLE
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+❌ DON'T:                              ✅ DO:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+print(api_key)                         from security import log_secret_status
+print(f"Key: {api_key}")               print(log_secret_status("API_KEY", api_key))
+
+os.environ.get("TOKEN")                is_secret_set(token)
+print(error.message)                   from security import sanitize_error
+                                       print(sanitize_error(error))
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 BEFORE EVERY COMMIT:
+
+1. Check for exposed secrets:
+   git diff --staged | grep -i "sk-ant\|password\|token\|api_key"
+   → Should return NOTHING
+
+2. Verify .env not included:
+   git status | grep ".env"
+   → Should NOT appear
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🛡️  SECURITY UTILITIES (use these!):
+
+From src/security.py:
+
+  mask_secret(secret)           → "sk-ant-api03-...qwAA"
+  is_secret_set(secret)         → True/False (no exposure)
+  log_secret_status(name, val)  → "✓ API_KEY loaded: sk-ant-...qwAA"
+  sanitize_error(error)         → Safe error message
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📚 DOCUMENTS TO READ:
+
+  GUARDRAILS.md                 ← Complete security policy
+  SECURITY_INCIDENT_REPORT.md   ← What happened & how we fixed it
+  .env.example                  ← Template for environment variables
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⚠️  CURRENT STATUS:
+
+❌ API key in this session is EXPOSED (for demo purposes only)
+✅ All code now uses safe masking for future sessions
+⏳ Rotate key before production deployment
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Questions? Read GUARDRAILS.md → Section: "🛡️ Debugging Best Practices"
+
+Last Updated: 2026-04-18
+Status: ACTIVE until testing complete
