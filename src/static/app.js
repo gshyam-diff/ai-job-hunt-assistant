@@ -185,20 +185,29 @@ async function searchJobs() {
     const location = jobLocationInput.value.trim();
     const isRemote = jobRemoteInput.checked;
 
+    // Collect selected job sites
+    const siteCheckboxes = document.querySelectorAll('.site-filter:checked');
+    const sites = Array.from(siteCheckboxes).map(cb => cb.value);
+
     if (!query) {
         showStatus(jobsStatus, 'Enter a role or keyword to search.', 'error');
         return;
     }
 
+    if (sites.length === 0) {
+        showStatus(jobsStatus, 'Select at least one job site to search.', 'error');
+        return;
+    }
+
     searchJobsBtn.disabled = true;
-    showStatus(jobsStatus, 'Searching Indeed, LinkedIn, Google — and rating each match… this takes 20–60s.', 'loading');
+    showStatus(jobsStatus, 'Searching ' + sites.join(', ') + ' — and rating each match… this takes 20–60s.', 'loading');
     jobsList.innerHTML = '';
 
     try {
         const res = await fetch('/jobs', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ query, location, is_remote: isRemote }),
+            body: JSON.stringify({ query, location, is_remote: isRemote, sites }),
         });
         const data = await res.json();
 

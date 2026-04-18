@@ -163,12 +163,13 @@ def jobs_search():
     query = (data.get("query") or "").strip()
     location = (data.get("location") or "").strip()
     is_remote = bool(data.get("is_remote"))
+    sites = data.get("sites") or None
 
     if not query:
         return jsonify({"error": "Please provide a search query (e.g. 'senior python engineer')."}), 400
 
     try:
-        jobs = search_jobs(query=query, location=location, is_remote=is_remote)
+        jobs = search_jobs(query=query, location=location, is_remote=is_remote, sites=sites)
     except Exception as e:  # noqa: BLE001
         return jsonify({"error": f"Job search failed: {e.__class__.__name__}: {e}"}), 500
 

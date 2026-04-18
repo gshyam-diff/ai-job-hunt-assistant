@@ -32,10 +32,14 @@ def search_jobs(
     results_wanted: int = JOB_RESULTS_WANTED,
     hours_old: int = JOB_HOURS_OLD,
     is_remote: bool = False,
+    sites: list[str] = None,
 ) -> list[dict]:
     """Fetch job listings from Indeed/LinkedIn/Google and return normalized dicts."""
+    if sites is None:
+        sites = JOB_SITES
+
     df = scrape_jobs(
-        site_name=JOB_SITES,
+        site_name=sites,
         search_term=query,
         google_search_term=f"{query} jobs near {location}" if location else f"{query} jobs",
         location=location or None,
