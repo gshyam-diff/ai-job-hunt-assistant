@@ -4,6 +4,7 @@ import re
 import anthropic
 
 from config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
+from security import log_secret_status, sanitize_error, is_secret_set
 
 RATER_SYSTEM = """You are a career coach scoring how well a candidate's resume matches a job description.
 For each job, output a JSON object with:
@@ -37,11 +38,11 @@ def rate_jobs(jobs: list[dict], resume_text: str) -> dict[str, dict]:
         return {}
 
     print(f"[JOB_RATER] Starting to rate {len(jobs)} jobs")
-    print(f"[JOB_RATER] API Key available: {bool(ANTHROPIC_API_KEY)}")
+    print(f"[JOB_RATER] {log_secret_status('API_KEY', ANTHROPIC_API_KEY)}")
     print(f"[JOB_RATER] Model: {ANTHROPIC_MODEL}")
 
-    if not ANTHROPIC_API_KEY:
-        print("[JOB_RATER] ⚠️  API key is empty! Returning fallback ratings.")
+    if not is_secret_set(ANTHROPIC_API_KEY):
+        print("[JOB_RATER] ⚠️  API key is not set! Returning fallback ratings.")
         # Fallback ratings when no API key — neutral 5s
         return {
             j["id"]: {
@@ -70,10 +71,9 @@ def rate_jobs(jobs: list[dict], resume_text: str) -> dict[str, dict]:
     )
 
     try:
-        print(f"[JOB_RATER] Creating Anthropic client...")
+        print(f"[JOB_RATER] Calling Claude API...")
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-        
-        print(f"[JOB_RATER] Calling API with model {ANTHROPIC_MODEL}...")
+
         resp = client.messages.create(
             model=ANTHROPIC_MODEL,
             max_tokens=2048,
@@ -81,19 +81,18 @@ def rate_jobs(jobs: list[dict], resume_text: str) -> dict[str, dict]:
             messages=[{"role": "user", "content": user_msg}],
         )
 
-        print(f"[JOB_RATER] API responded successfully")
+        print(f"[JOB_RATER] ✓ API responded successfully")
         ratings = _extract_json_array(resp.content[0].text)
-        print(f"[JOB_RATER] Extracted {len(ratings)} job ratings from response")
-        
+        print(f"[JOB_RATER] ✓ Extracted {len(ratings)} job ratings")
+
     except Exception as e:
-        print(f"[JOB_RATER] ❌ Error rating jobs: {type(e).__name__}: {e}")
-        import traceback
-        traceback.print_exc()
+        error_msg = sanitize_error(e)
+        print(f"[JOB_RATER] ❌ Error: {error_msg}")
         # Fallback: return neutral ratings on error
         return {
             j["id"]: {
                 "score": 5,
-                "rationale": f"Rating service error: {type(e).__name__}",
+                "rationale": "Rating service temporarily unavailable.",
                 "strengths": ["Check job description for details"],
                 "gaps": ["Unable to analyze"],
             }

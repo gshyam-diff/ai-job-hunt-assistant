@@ -1,0 +1,15 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "resume-rag-chatbot",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["app.py"],
+      "port": 5000,
+      "cwd": "src",
+      "env": {
+        "ANTHROPIC_API_KEY": "${env:ANTHROPIC_API_KEY}"
+      }
+    }
+  ]
+}

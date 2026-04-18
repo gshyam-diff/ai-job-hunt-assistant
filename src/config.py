@@ -15,11 +15,12 @@ ALLOWED_EXTENSIONS = {"pdf"}
 ANTHROPIC_MODEL = "claude-haiku-4-5-20251001"
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
-# Debug: Print if key is set
-if not ANTHROPIC_API_KEY:
-    print("WARNING: ANTHROPIC_API_KEY is not set in environment or .env file!")
+# Safe logging of API key status (without exposing the actual key)
+from security import log_secret_status
+if ANTHROPIC_API_KEY:
+    print(log_secret_status("ANTHROPIC_API_KEY", ANTHROPIC_API_KEY))
 else:
-    print(f"✓ ANTHROPIC_API_KEY loaded: {ANTHROPIC_API_KEY[:20]}...")
+    print("⚠️  ANTHROPIC_API_KEY is not set — rating will be unavailable")
 
 # Job search defaults
 JOB_SITES = ["indeed", "linkedin", "google"]
