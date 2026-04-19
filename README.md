@@ -2,7 +2,7 @@
 
 An agentic AI application that takes you from resume upload to interview-ready. Built with Claude (Anthropic API) and Python.
 
-**Live demo:** https://resume-rag-chatbot-production.up.railway.app
+**Live demo:** https://resume-rag-chatbot-production-7270.up.railway.app
 
 ---
 
