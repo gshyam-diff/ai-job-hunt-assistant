@@ -2,15 +2,15 @@
 const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const uploadStatus = document.getElementById('upload-status');
-const suggestionsSection = document.getElementById('suggestions-section');
-const suggestionsContainer = document.getElementById('suggestions-container');
-const chatSection = document.getElementById('chat-section');
-const messagesDiv = document.getElementById('messages');
-const chatInput = document.getElementById('chat-input');
-const sendBtn = document.getElementById('send-btn');
+const demoBtn = document.getElementById('demo-btn');
 
-const modeTabs = document.getElementById('mode-tabs');
-const chatMode = document.getElementById('chat-mode');
+const hero = document.getElementById('hero');
+const uploadSection = document.getElementById('upload-section');
+const resumePill = document.getElementById('resume-pill');
+const pillFilename = document.getElementById('pill-filename');
+const pillRole = document.getElementById('pill-role');
+const pillReupload = document.getElementById('pill-reupload');
+
 const jobsMode = document.getElementById('jobs-mode');
 
 const jobQueryInput = document.getElementById('job-query');
@@ -29,6 +29,8 @@ const modalCopy = document.getElementById('modal-copy');
 
 let isProcessing = false;
 let currentJob = null; // Track current job for actions
+let cachedResumeText = null;
+let activeStream = null;
 const jobsMap = new Map(); // Store all job objects by ID — avoids JSON-in-HTML-attribute bugs
 
 // ===== Upload =====
@@ -72,27 +74,14 @@ async function uploadFile(file) {
             return;
         }
 
-        showStatus(uploadStatus, `${data.message} (${data.chunks} chunks created)`, 'success');
-        messagesDiv.innerHTML = '';
-        chatSection.classList.remove('hidden');
-        chatInput.disabled = false;
-        sendBtn.disabled = false;
-        modeTabs.classList.remove('hidden');
+        collapseToPill(data.filename || file.name, data.inferred_role || '');
+        jobsMode.classList.remove('hidden');
 
-        if (data.suggestions && data.suggestions.length > 0) {
-            showSuggestions(data.suggestions);
-        }
-
-        // Auto-fill inferred role and search jobs
+        // Auto-fill inferred role, location, remote preference, then auto-search
         if (data.inferred_role) {
-            // Switch to jobs tab
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.mode-panel').forEach(p => p.classList.add('hidden'));
-            document.querySelector('button[data-mode="jobs"]').classList.add('active');
-            document.getElementById('jobs-mode').classList.remove('hidden');
-
-            // Pre-fill and auto-search
             jobQueryInput.value = data.inferred_role;
+            if (data.inferred_location) jobLocationInput.value = data.inferred_location;
+            if (data.open_to_remote) jobRemoteInput.checked = true;
             searchJobs();
         }
     } catch (err) {
@@ -107,87 +96,54 @@ function showStatus(el, msg, type) {
     el.classList.remove('hidden');
 }
 
-// ===== Mode Tabs =====
-modeTabs.addEventListener('click', (e) => {
-    if (!e.target.matches('.tab-btn')) return;
-    const mode = e.target.dataset.mode;
-    document.querySelectorAll('.tab-btn').forEach((b) => b.classList.toggle('active', b.dataset.mode === mode));
-    chatMode.classList.toggle('hidden', mode !== 'chat');
-    jobsMode.classList.toggle('hidden', mode !== 'jobs');
-});
-
-// ===== Suggestions =====
-function showSuggestions(suggestions) {
-    suggestionsContainer.innerHTML = '';
-    suggestions.forEach((q) => {
-        const chip = document.createElement('button');
-        chip.className = 'suggestion-chip';
-        chip.textContent = q;
-        chip.addEventListener('click', () => {
-            chatInput.value = q;
-            sendMessage();
-            suggestionsSection.classList.add('hidden');
-        });
-        suggestionsContainer.appendChild(chip);
-    });
-    suggestionsSection.classList.remove('hidden');
+function collapseToPill(filename, role) {
+    pillFilename.textContent = filename;
+    pillRole.textContent = role;
+    resumePill.classList.remove('hidden');
+    hero.classList.add('hidden');
+    uploadSection.classList.add('hidden');
 }
 
-// ===== Chat =====
-chatInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-});
-sendBtn.addEventListener('click', sendMessage);
+function expandToHero() {
+    resumePill.classList.add('hidden');
+    hero.classList.remove('hidden');
+    uploadSection.classList.remove('hidden');
+    jobsMode.classList.add('hidden');
+    uploadStatus.classList.add('hidden');
+    fileInput.value = '';
+    cachedResumeText = null;
+}
 
-async function sendMessage() {
-    const msg = chatInput.value.trim();
-    if (!msg || isProcessing) return;
+pillReupload.addEventListener('click', expandToHero);
 
+demoBtn.addEventListener('click', async () => {
+    if (isProcessing) return;
     isProcessing = true;
-    chatInput.value = '';
-    sendBtn.disabled = true;
-
-    addMessage(msg, 'user');
-    const typing = addTypingIndicator();
+    showStatus(uploadStatus, 'Loading sample resume...', 'loading');
 
     try {
-        const res = await fetch('/chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: msg }),
-        });
+        const res = await fetch('/demo', { method: 'POST' });
         const data = await res.json();
-        typing.remove();
+        if (!res.ok) {
+            showStatus(uploadStatus, data.error || 'Demo failed', 'error');
+            isProcessing = false;
+            return;
+        }
 
-        if (!res.ok) addMessage(data.error || 'Something went wrong', 'error');
-        else addMessage(data.answer, 'assistant');
+        collapseToPill(data.filename || 'sample-resume.pdf', data.inferred_role || '');
+        jobsMode.classList.remove('hidden');
+
+        if (data.inferred_role) {
+            jobQueryInput.value = data.inferred_role;
+            if (data.inferred_location) jobLocationInput.value = data.inferred_location;
+            if (data.open_to_remote) jobRemoteInput.checked = true;
+            searchJobs();
+        }
     } catch (err) {
-        typing.remove();
-        addMessage('Network error. Is the server running?', 'error');
+        showStatus(uploadStatus, 'Network error loading demo.', 'error');
     }
-
     isProcessing = false;
-    sendBtn.disabled = false;
-    chatInput.focus();
-}
-
-function addMessage(content, role) {
-    const div = document.createElement('div');
-    div.className = `message ${role}`;
-    div.textContent = content;
-    messagesDiv.appendChild(div);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    return div;
-}
-
-function addTypingIndicator() {
-    const div = document.createElement('div');
-    div.className = 'typing-indicator';
-    div.innerHTML = '<span></span><span></span><span></span>';
-    messagesDiv.appendChild(div);
-    messagesDiv.scrollTop = messagesDiv.scrollHeight;
-    return div;
-}
+});
 
 // ===== Jobs =====
 searchJobsBtn.addEventListener('click', searchJobs);
@@ -252,8 +208,8 @@ function renderJobCard(job) {
     const card = document.createElement('div');
     card.className = 'job-card';
 
-    const score = job.rating?.score ?? 5;
-    const scoreClass = score >= 8 ? 'high' : score >= 6 ? 'mid' : 'low';
+    const match = job.rating?.match ?? 0;
+    const scoreClass = match >= 75 ? 'high' : match >= 50 ? 'mid' : 'low';
 
     const meta = [
         job.location,
@@ -263,14 +219,11 @@ function renderJobCard(job) {
         job.site,
     ].filter(Boolean).join(' · ');
 
-    const strengths = (job.rating?.strengths || []).map((s) => `<li>${esc(s)}</li>`).join('');
-    const gaps = (job.rating?.gaps || []).map((s) => `<li>${esc(s)}</li>`).join('');
-
     card.innerHTML = `
         <div class="job-card-header">
             <div class="job-score ${scoreClass}">
-                <span class="score-num">${score}</span>
-                <span class="score-label">/10</span>
+                <span class="score-num">${match}</span>
+                <span class="score-label">% match</span>
             </div>
             <div class="job-title-block">
                 <h3>${esc(job.title)}</h3>
@@ -278,20 +231,16 @@ function renderJobCard(job) {
                 <div class="job-meta">${esc(meta)}</div>
             </div>
         </div>
-        <p class="job-rationale">${esc(job.rating?.rationale || '')}</p>
-        ${strengths || gaps ? `
-        <div class="job-assessment">
-            ${strengths ? `<div><strong>Strengths</strong><ul>${strengths}</ul></div>` : ''}
-            ${gaps ? `<div><strong>Gaps</strong><ul>${gaps}</ul></div>` : ''}
-        </div>` : ''}
+        <p class="job-rationale">${esc(job.rating?.verdict || '')}</p>
         <div class="job-actions">
             <button class="btn-action" data-action="view-desc" data-id="${job.id}">📄 View Description</button>
             ${job.job_url ? `<a class="btn-primary" href="${esc(job.job_url)}" target="_blank" rel="noopener">Apply →</a>` : ''}
+            <button class="btn-action" data-action="ats" data-id="${job.id}">ATS Deep Dive</button>
             <button class="btn-action" data-action="tailor" data-id="${job.id}">Tailor Resume</button>
             <button class="btn-action" data-action="outreach" data-id="${job.id}">Draft Outreach Email</button>
-            <button class="btn-action" data-action="gap" data-id="${job.id}">Skill Gap Analysis</button>
             <button class="btn-action" data-action="cover-letter" data-id="${job.id}">Cover Letter</button>
         </div>
+        <div class="ats-panel hidden" data-id="${job.id}"></div>
     `;
 
     card.querySelectorAll('button.btn-action').forEach((btn) => {
@@ -302,6 +251,73 @@ function renderJobCard(job) {
     });
 
     return card;
+}
+
+async function runATS(jobId, job) {
+    const panel = document.querySelector(`.ats-panel[data-id="${jobId}"]`);
+    if (!panel) return;
+
+    if (!panel.classList.contains('hidden') && panel.dataset.loaded === 'true') {
+        panel.classList.add('hidden');
+        return;
+    }
+
+    panel.classList.remove('hidden');
+    panel.innerHTML = '<div class="ats-loading">Analyzing job description against your resume…</div>';
+
+    try {
+        const res = await fetch(`/jobs/${jobId}/ats`, { method: 'POST' });
+        const data = await res.json();
+        if (!res.ok) {
+            panel.innerHTML = `<div class="ats-error">${esc(data.error || 'Failed to score.')}</div>`;
+            return;
+        }
+        renderATS(panel, data);
+        panel.dataset.loaded = 'true';
+    } catch (err) {
+        panel.innerHTML = `<div class="ats-error">Network error scoring ATS.</div>`;
+    }
+}
+
+function renderATS(panel, data) {
+    const ats = data.ats || {};
+    const jd = data.parsed_jd || {};
+    const match = ats.overall_match ?? 0;
+    const matchClass = match >= 75 ? 'high' : match >= 50 ? 'mid' : 'low';
+
+    const chipList = (arr, type) => (arr || []).map((s) => `<span class="ats-chip ats-chip-${type}">${esc(s)}</span>`).join('');
+    const bullets = (arr) => (arr || []).map((s) => `<li>${esc(s)}</li>`).join('');
+    const redFlags = (jd.red_flags || []).map((s) => `<li>${esc(s)}</li>`).join('');
+
+    panel.innerHTML = `
+        <div class="ats-header">
+            <div class="ats-score ${matchClass}">
+                <span class="ats-score-num">${match}</span>
+                <span class="ats-score-label">% match</span>
+            </div>
+            <div class="ats-verdict">${esc(ats.verdict || '')}</div>
+        </div>
+        <div class="ats-grid">
+            <div class="ats-col">
+                <h4>Must-have skills</h4>
+                <div class="ats-chips">${chipList(ats.must_have_matched, 'match')}${chipList(ats.must_have_missing, 'miss')}</div>
+            </div>
+            <div class="ats-col">
+                <h4>Nice-to-have skills</h4>
+                <div class="ats-chips">${chipList(ats.nice_to_have_matched, 'match')}${chipList(ats.nice_to_have_missing, 'miss')}</div>
+            </div>
+        </div>
+        ${(ats.keyword_gaps || []).length ? `
+        <div class="ats-section">
+            <h4>Keywords to add to your resume</h4>
+            <ul>${bullets(ats.keyword_gaps)}</ul>
+        </div>` : ''}
+        ${redFlags ? `
+        <div class="ats-section ats-redflags">
+            <h4>Red flags</h4>
+            <ul>${redFlags}</ul>
+        </div>` : ''}
+    `;
 }
 
 function esc(s) {
@@ -316,7 +332,6 @@ function getFilename(job, action) {
     const actionLabel = {
         'tailor': 'Tailored_Resume',
         'outreach': 'Outreach_Email',
-        'gap': 'Skill_Gap_Analysis',
         'cover-letter': 'Cover_Letter',
     }[action] || action;
     
@@ -325,7 +340,17 @@ function getFilename(job, action) {
 
 async function runJobAction(action, jobId, job) {
     currentJob = job;
-    
+
+    if (action === 'ats') {
+        await runATS(jobId, job);
+        return;
+    }
+
+    if (action === 'tailor') {
+        await runTailorStream(jobId, job);
+        return;
+    }
+
     if (action === 'view-desc') {
         if (job.description && job.description.trim().length > 10) {
             openModal(`Job Description — ${job.title}`, job.description, 'markdown');
@@ -361,7 +386,6 @@ async function runJobAction(action, jobId, job) {
     const titles = {
         'tailor': `Tailored Resume — ${job.title}`,
         'outreach': `Outreach Email — ${job.company}`,
-        'gap': `Skill Gap Analysis — ${job.title}`,
         'cover-letter': `Cover Letter — ${job.title}`,
     };
     openModal(titles[action] || 'Result', 'Generating… this takes a few seconds.');
@@ -404,7 +428,14 @@ function updateModalWithPDF(action, data) {
     pdfBtn.className = 'btn-primary';
     pdfBtn.textContent = '📥 Download PDF';
     pdfBtn.style.marginRight = '0.5rem';
-    pdfBtn.addEventListener('click', () => downloadPDF(action, data));
+    pdfBtn.dataset.pdfBtn = 'true';
+    pdfBtn.addEventListener('click', () => {
+        if (action === 'tailor') {
+            downloadResumePDF(data.content || '', currentJob);
+        } else {
+            downloadPDF(action, data);
+        }
+    });
     modalCopy.parentElement.insertBefore(pdfBtn, modalCopy);
 }
 
@@ -473,8 +504,9 @@ function openModal(title, body, format = 'text') {
     setModalBody(body, format);
     modalOverlay.classList.remove('hidden');
 }
-function closeModal() { 
-    modalOverlay.classList.add('hidden'); 
+function closeModal() {
+    if (activeStream) { activeStream.close(); activeStream = null; }
+    modalOverlay.classList.add('hidden');
     // Remove PDF button if it exists
     const pdfBtn = document.querySelector('[data-pdf-btn]');
     if (pdfBtn) pdfBtn.remove();
@@ -517,3 +549,287 @@ function renderMarkdown(md) {
 function inlineMd(s) {
     return esc(s).replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>').replace(/`(.+?)`/g, '<code>$1</code>');
 }
+
+// ===== Professional Resume PDF =====
+// jsPDF default unit is mm, format a4 (210 x 297). We render the tailored
+// resume text into a structured, ATS-friendly PDF with clickable links.
+
+function isSectionHeading(line) {
+    const t = line.trim();
+    if (t.length < 2 || t.length > 40) return false;
+    // All uppercase letters + spaces/ampersands/slashes, at least one letter
+    return /^[A-Z][A-Z0-9 &/\-]+$/.test(t) && /[A-Z]/.test(t);
+}
+
+function isRoleHeader(line) {
+    // Detects "Title — Company (2022 - Present)" style role headers
+    return /\s[—–-]\s/.test(line) && /\(.+\d{4}.+\)\s*$/.test(line);
+}
+
+// Regex for emails / URLs / bare domains like linkedin.com/in/x or github.com/x
+const LINK_RE = /(https?:\/\/\S+|[\w.+-]+@[\w.-]+\.\w+|(?:www\.)?(?:linkedin\.com|github\.com|gitlab\.com)\/\S+)/gi;
+
+function normalizeUrl(raw) {
+    const v = raw.replace(/[).,;]+$/, ''); // strip trailing punctuation
+    if (v.includes('@') && !v.startsWith('mailto:')) return 'mailto:' + v;
+    if (/^https?:\/\//i.test(v)) return v;
+    return 'https://' + v;
+}
+
+function drawTextWithLinks(doc, text, x, y, options = {}) {
+    // Draws text then overlays clickable rects on any detected links.
+    const align = options.align || 'left';
+    doc.text(text, x, y, { align });
+
+    const fontHeight = doc.getLineHeight() / doc.internal.scaleFactor;
+    const textW = doc.getTextWidth(text);
+    let startX = x;
+    if (align === 'center') startX = x - textW / 2;
+    else if (align === 'right') startX = x - textW;
+
+    LINK_RE.lastIndex = 0;
+    let m;
+    while ((m = LINK_RE.exec(text)) !== null) {
+        const pre = text.slice(0, m.index);
+        const preW = doc.getTextWidth(pre);
+        const linkW = doc.getTextWidth(m[0]);
+        doc.link(startX + preW, y - fontHeight + 0.5, linkW, fontHeight, {
+            url: normalizeUrl(m[0]),
+        });
+    }
+}
+
+function downloadResumePDF(content, job) {
+    const { jsPDF } = window.jspdf;
+    if (!jsPDF) { alert('PDF library not loaded.'); return; }
+    if (!content || !content.trim()) { alert('No tailored content to download.'); return; }
+
+    const doc = new jsPDF();
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const marginX = 18;
+    const marginTop = 18;
+    const marginBottom = 15;
+    const usableW = pageW - 2 * marginX;
+
+    // Set PDF metadata so it's professional when viewed
+    doc.setProperties({
+        title: `${job?.title || 'Tailored'} — Resume`,
+        subject: 'Tailored Resume',
+        creator: 'AI Job Hunt Assistant',
+    });
+
+    const lines = content.split('\n').map((l) => l.trimEnd());
+    let y = marginTop;
+    let i = 0;
+
+    const ensureSpace = (needed) => {
+        if (y + needed > pageH - marginBottom) {
+            doc.addPage();
+            y = marginTop;
+        }
+    };
+
+    // --- Header: name (first non-empty line) ---
+    while (i < lines.length && !lines[i].trim()) i++;
+    const name = (lines[i] || 'Resume').trim();
+    i++;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(20);
+    doc.setTextColor(25, 25, 50);
+    doc.text(name, pageW / 2, y, { align: 'center' });
+    y += 7;
+
+    // --- Contact line (next non-empty line, if it's not a section heading) ---
+    while (i < lines.length && !lines[i].trim()) i++;
+    if (i < lines.length && !isSectionHeading(lines[i])) {
+        const contact = lines[i].trim();
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.5);
+        doc.setTextColor(70, 70, 90);
+        drawTextWithLinks(doc, contact, pageW / 2, y, { align: 'center' });
+        y += 5;
+        i++;
+    }
+
+    // --- Separator ---
+    doc.setDrawColor(180, 180, 200);
+    doc.setLineWidth(0.3);
+    doc.line(marginX, y, pageW - marginX, y);
+    y += 5;
+
+    const LINE_H = 4.8; // mm per line of body text
+
+    // --- Body ---
+    while (i < lines.length) {
+        const raw = lines[i];
+        const line = raw.trim();
+
+        if (!line) { y += 2.2; i++; continue; }
+
+        if (isSectionHeading(line)) {
+            ensureSpace(10);
+            y += 2;
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(11);
+            doc.setTextColor(25, 25, 50);
+            doc.text(line, marginX, y);
+            y += 1.5;
+            doc.setDrawColor(200, 200, 215);
+            doc.setLineWidth(0.2);
+            doc.line(marginX, y, pageW - marginX, y);
+            y += 4;
+            i++;
+            continue;
+        }
+
+        const bulletMatch = line.match(/^[-•*·]\s+(.+)/);
+        if (bulletMatch) {
+            const text = bulletMatch[1];
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(10);
+            doc.setTextColor(45, 45, 60);
+            const wrapped = doc.splitTextToSize(text, usableW - 5);
+            ensureSpace(wrapped.length * LINE_H);
+            doc.text('•', marginX + 1, y);
+            wrapped.forEach((w, idx) => {
+                drawTextWithLinks(doc, w, marginX + 5, y + idx * LINE_H);
+            });
+            y += wrapped.length * LINE_H;
+            i++;
+            continue;
+        }
+
+        // Role header: "Title — Company (dates)"
+        if (isRoleHeader(line)) {
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(10.5);
+            doc.setTextColor(30, 30, 55);
+            const wrapped = doc.splitTextToSize(line, usableW);
+            ensureSpace(wrapped.length * LINE_H);
+            wrapped.forEach((w, idx) => {
+                doc.text(w, marginX, y + idx * LINE_H);
+            });
+            y += wrapped.length * LINE_H + 0.5;
+            i++;
+            continue;
+        }
+
+        // Paragraph / regular line
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(45, 45, 60);
+        const wrapped = doc.splitTextToSize(line, usableW);
+        ensureSpace(wrapped.length * LINE_H);
+        wrapped.forEach((w, idx) => {
+            drawTextWithLinks(doc, w, marginX, y + idx * LINE_H);
+        });
+        y += wrapped.length * LINE_H;
+        i++;
+    }
+
+    const filename = getFilename(job, 'tailor');
+    doc.save(filename);
+}
+
+// ===== Streaming Resume Tailor =====
+async function getResumeText() {
+    if (cachedResumeText) return cachedResumeText;
+    const res = await fetch('/resume');
+    if (!res.ok) return '';
+    const data = await res.json();
+    cachedResumeText = data.raw_text || '';
+    return cachedResumeText;
+}
+
+async function runTailorStream(jobId, job) {
+    const originalText = await getResumeText();
+    if (!originalText) {
+        openModal('Tailor Resume', 'No resume loaded.', 'text');
+        return;
+    }
+
+    // Abort any previous stream
+    if (activeStream) { activeStream.close(); activeStream = null; }
+
+    modalTitle.textContent = `Tailoring Resume — ${job.title}`;
+    modalBody.innerHTML = `
+        <div class="tailor-stream">
+            <div class="tailor-status">
+                <span class="pulse-dot"></span>
+                <span id="tailor-status-text">Connecting to Claude...</span>
+            </div>
+            <div class="tailor-diff" id="tailor-diff"></div>
+        </div>
+    `;
+    modalBody.dataset.copyText = '';
+    modalOverlay.classList.remove('hidden');
+
+    const diffEl = document.getElementById('tailor-diff');
+    const statusEl = document.getElementById('tailor-status-text');
+
+    let accumulated = '';
+    let tokenCount = 0;
+    let renderScheduled = false;
+
+    const renderDiff = () => {
+        renderScheduled = false;
+        if (!window.Diff) {
+            diffEl.textContent = accumulated;
+            return;
+        }
+        const parts = window.Diff.diffLines(originalText, accumulated, { newlineIsToken: false });
+        const html = parts.map((p) => {
+            const cls = p.added ? 'diff-add' : p.removed ? 'diff-del' : 'diff-same';
+            return `<span class="${cls}">${esc(p.value)}</span>`;
+        }).join('');
+        diffEl.innerHTML = html;
+        diffEl.scrollTop = diffEl.scrollHeight;
+    };
+
+    const scheduleRender = () => {
+        if (renderScheduled) return;
+        renderScheduled = true;
+        setTimeout(renderDiff, 120);
+    };
+
+    const source = new EventSource(`/jobs/${jobId}/tailor-stream`);
+    activeStream = source;
+
+    source.onmessage = (e) => {
+        let msg;
+        try { msg = JSON.parse(e.data); } catch { return; }
+
+        if (msg.error) {
+            statusEl.textContent = `Error: ${msg.error}`;
+            source.close();
+            activeStream = null;
+            return;
+        }
+        if (msg.done) {
+            statusEl.textContent = `Done — ${tokenCount} chunks streamed.`;
+            document.querySelector('.pulse-dot')?.classList.add('done');
+            renderDiff();
+            modalBody.dataset.copyText = accumulated;
+            updateModalWithPDF('tailor', { content: accumulated });
+            source.close();
+            activeStream = null;
+            return;
+        }
+        if (msg.token) {
+            accumulated += msg.token;
+            tokenCount += 1;
+            statusEl.textContent = `Streaming... ${tokenCount} chunks · ${accumulated.length} chars`;
+            scheduleRender();
+        }
+    };
+
+    source.onerror = () => {
+        if (source.readyState === EventSource.CLOSED) return;
+        statusEl.textContent = 'Connection dropped.';
+        source.close();
+        activeStream = null;
+    };
+}
+

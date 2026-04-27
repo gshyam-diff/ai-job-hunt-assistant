@@ -3,15 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Resume Copilot — Chat, Search Jobs, Tailor</title>
+    <title>Resume Copilot — Get Matched, Scored, Ready to Apply</title>
     <link rel="stylesheet" href="/static/style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsdiff/5.1.0/diff.min.js"></script>
 </head>
 <body>
+    <!-- Collapsed resume pill: shown after upload -->
+    <div id="resume-pill" class="resume-pill hidden">
+        <span class="pill-dot"></span>
+        <span class="pill-filename" id="pill-filename"></span>
+        <span class="pill-sep">·</span>
+        <span class="pill-role" id="pill-role"></span>
+        <button class="pill-action" id="pill-reupload">Re-upload</button>
+    </div>
+
     <div class="container">
-        <header>
-            <h1>Resume Copilot</h1>
-            <p class="subtitle">Upload your resume. Ask questions. Find jobs. Tailor applications.</p>
+        <header id="hero" class="hero">
+            <h1>Upload your resume. <span class="accent">Apply smarter in 60 seconds.</span></h1>
+            <p class="subtitle">An agent reads your resume, finds matching jobs across five platforms, and scores each one against your background. Then tailors the resume for every role you click.</p>
         </header>
 
         <div id="upload-section" class="upload-section">
@@ -27,33 +37,11 @@
                 </div>
                 <input type="file" id="file-input" accept=".pdf" hidden>
             </div>
+            <div class="upload-alt">
+                <span>or</span>
+                <button id="demo-btn" class="demo-btn">Try with a sample resume</button>
+            </div>
             <div id="upload-status" class="upload-status hidden"></div>
-        </div>
-
-        <!-- Mode tabs: shown after upload -->
-        <div id="mode-tabs" class="mode-tabs hidden">
-            <button class="tab-btn active" data-mode="chat">Chat with Resume</button>
-            <button class="tab-btn" data-mode="jobs">Find & Tailor Jobs</button>
-        </div>
-
-        <!-- CHAT MODE -->
-        <div id="chat-mode" class="mode-panel">
-            <div id="suggestions-section" class="suggestions-section hidden">
-                <p class="suggestions-label">Try asking:</p>
-                <div id="suggestions-container" class="suggestions-container"></div>
-            </div>
-
-            <div id="chat-section" class="chat-section hidden">
-                <div id="messages" class="messages"></div>
-                <div class="input-area">
-                    <input type="text" id="chat-input" placeholder="Ask a question about the resume..." autocomplete="off">
-                    <button id="send-btn" disabled>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
         </div>
 
         <!-- JOBS MODE -->

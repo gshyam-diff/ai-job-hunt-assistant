@@ -1,3 +1,4 @@
+import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -9,18 +10,17 @@ from dotenv import load_dotenv
 env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(env_path)
 
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, Response, request, jsonify, render_template, stream_with_context
 
 from config import MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB, ALLOWED_EXTENSIONS
-from pdf_processor import extract_text, chunk_text
-from embeddings import TFIDFIndex
-from retriever import retrieve
-from chat import generate_answer, generate_suggestions
+from pdf_processor import extract_text
 from resume_analyzer import analyze_resume
 from job_search import search_jobs, format_salary
 from job_rater import rate_jobs
-from tailor import tailor_resume, cover_letter, skill_gap
+from tailor import tailor_resume, tailor_resume_stream, cover_letter
 from recruiter import draft_outreach
+from jd_parser import parse_jd
+from ats_score import score_ats
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE_BYTES
@@ -28,19 +28,15 @@ app.config["MAX_CONTENT_LENGTH"] = MAX_FILE_SIZE_BYTES
 # In-memory state (single user, single session)
 state = {
     "resume": None,
-    "index": None,
-    "conversation": [],
-    "suggestions": [],
     "jobs": {},  # id -> job dict (enriched with rating)
+    "resume_versions": {},  # job_id -> {job_title, company, content, created_at}
 }
 
 
 def reset_state():
     state["resume"] = None
-    state["index"] = None
-    state["conversation"] = []
-    state["suggestions"] = []
     state["jobs"] = {}
+    state["resume_versions"] = {}
 
 
 def _require_resume():
@@ -89,73 +85,69 @@ def upload():
     if not raw_text.strip():
         return jsonify({"error": "Could not extract text from this PDF. It may be a scanned image."}), 400
 
-    chunks = chunk_text(raw_text)
-
-    if not chunks:
-        return jsonify({"error": "No usable text found in the PDF"}), 400
-
-    index = TFIDFIndex()
-    index.build(chunks)
-
     state["resume"] = {
         "filename": file.filename,
         "raw_text": raw_text,
-        "chunks": chunks,
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
     }
-    state["index"] = index
-
-    suggestions = generate_suggestions(raw_text)
-    state["suggestions"] = suggestions
 
     analysis = analyze_resume(raw_text)
-    inferred_role = analysis.get("job_titles", ["Software Engineer"])[0]
 
     return jsonify({
         "message": f"Resume '{file.filename}' uploaded successfully",
-        "chunks": len(chunks),
-        "suggestions": suggestions,
-        "inferred_role": inferred_role,
+        "inferred_role": analysis.get("best_fit_title", "Software Engineer"),
+        "inferred_location": analysis.get("location", ""),
+        "open_to_remote": analysis.get("open_to_remote", False),
     })
 
 
-@app.route("/chat", methods=["POST"])
-def chat():
-    if state["resume"] is None or state["index"] is None:
-        return jsonify({"error": "Please upload a resume first"}), 400
+SAMPLE_RESUME_TEXT = """Alex Morgan
+San Francisco, CA · alex.morgan@example.com · linkedin.com/in/alexmorgan-eng · open to remote
 
-    data = request.get_json()
-    if not data or not data.get("message", "").strip():
-        return jsonify({"error": "Please provide a message"}), 400
+SUMMARY
+Senior Backend Engineer with 6 years of experience building distributed systems in Python and Go. Shipped payments infrastructure at scale (500M+ transactions/year), mentored 4 engineers, and led a cross-team migration from monolith to event-driven microservices on AWS.
 
-    query = data["message"].strip()
+EXPERIENCE
 
-    state["conversation"].append({
-        "role": "user",
-        "content": query,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+Senior Backend Engineer — Stripe-like Payments Startup (2022 - Present)
+- Designed and shipped a multi-region ledger service handling 2B+ rows; 99.99% uptime SLA.
+- Led migration of 12-service monolith to Kafka-based event streaming; reduced p99 latency by 40%.
+- Built internal tooling for fraud detection team using Python, FastAPI, PostgreSQL, Redis.
+- Mentored 4 junior engineers through code reviews, 1:1s, and on-call shadowing.
 
-    context_chunks = retrieve(query, state["index"])
+Backend Engineer — Mid-stage SaaS (2019 - 2022)
+- Owned billing pipeline: Stripe integration, invoice generation, dunning flow. $50M ARR passed through it.
+- Designed GraphQL API gateway used by iOS, Android, and Web clients.
+- Reduced AWS bill 35% by rearchitecting RDS schema and introducing Redis caching layer.
 
-    answer = generate_answer(query, context_chunks, state["conversation"][:-1])
+Software Engineer — Agency (2018 - 2019)
+- Built REST APIs for 6 client projects using Django, Flask, and Node.
+- Set up CI/CD pipelines on GitHub Actions and AWS CodeBuild.
 
-    state["conversation"].append({
-        "role": "assistant",
-        "content": answer,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+SKILLS
+Python, Go, PostgreSQL, Redis, Kafka, AWS (EC2, Lambda, RDS, S3, SQS), Docker, Kubernetes, Terraform, FastAPI, Django, gRPC, GraphQL, Celery, Observability (Datadog, Sentry)
 
+EDUCATION
+B.S. Computer Science — UC Davis, 2018
+"""
+
+
+@app.route("/demo", methods=["POST"])
+def demo():
+    reset_state()
+    state["resume"] = {
+        "filename": "sample-resume.pdf",
+        "raw_text": SAMPLE_RESUME_TEXT,
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+    }
+    analysis = analyze_resume(SAMPLE_RESUME_TEXT)
     return jsonify({
-        "answer": answer,
-        "sources": [{"content": c["content"][:100] + "...", "score": c["score"]} for c in context_chunks],
-        "conversation": state["conversation"],
+        "message": "Sample resume loaded",
+        "filename": "sample-resume.pdf",
+        "inferred_role": analysis.get("best_fit_title", "Senior Backend Engineer"),
+        "inferred_location": analysis.get("location", "San Francisco, CA"),
+        "open_to_remote": analysis.get("open_to_remote", True),
     })
-
-
-@app.route("/suggestions", methods=["GET"])
-def suggestions():
-    return jsonify({"suggestions": state["suggestions"]})
 
 
 @app.route("/jobs", methods=["POST"])
@@ -189,19 +181,27 @@ def jobs_search():
     for j in jobs:
         r = ratings.get(j["id"], {})
         j["rating"] = {
-            "score": r.get("score", 5),
-            "rationale": r.get("rationale", ""),
-            "strengths": r.get("strengths", []),
-            "gaps": r.get("gaps", []),
+            "match": r.get("match", 0),
+            "verdict": r.get("verdict", ""),
         }
         j["salary_display"] = format_salary(j)
         state["jobs"][j["id"]] = j
         enriched.append(j)
 
-    # Sort by rating desc
-    enriched.sort(key=lambda x: x["rating"]["score"], reverse=True)
+    # Sort by match % desc
+    enriched.sort(key=lambda x: x["rating"]["match"], reverse=True)
 
     return jsonify({"jobs": enriched, "count": len(enriched)})
+
+
+@app.route("/resume", methods=["GET"])
+def get_resume():
+    if state["resume"] is None:
+        return jsonify({"error": "No resume loaded"}), 404
+    return jsonify({
+        "filename": state["resume"]["filename"],
+        "raw_text": state["resume"]["raw_text"],
+    })
 
 
 @app.route("/jobs/<job_id>/tailor", methods=["POST"])
@@ -216,6 +216,55 @@ def jobs_tailor(job_id):
     return jsonify({"content": content, "format": "markdown"})
 
 
+@app.route("/jobs/<job_id>/tailor-stream")
+def jobs_tailor_stream(job_id):
+    # EventSource only does GET. We validate eagerly and let the stream fail
+    # gracefully with an SSE error event if something breaks mid-stream.
+    if state["resume"] is None:
+        return Response("data: " + json.dumps({"error": "No resume loaded"}) + "\n\n",
+                        mimetype="text/event-stream")
+    job = state["jobs"].get(job_id)
+    if not job:
+        return Response("data: " + json.dumps({"error": "Job not found"}) + "\n\n",
+                        mimetype="text/event-stream")
+
+    resume_text = state["resume"]["raw_text"]
+
+    def generate():
+        chunks = []
+        try:
+            for chunk in tailor_resume_stream(resume_text, job):
+                chunks.append(chunk)
+                yield f"data: {json.dumps({'token': chunk})}\n\n"
+            full = "".join(chunks)
+            state["resume_versions"][job_id] = {
+                "job_title": job.get("title"),
+                "company": job.get("company"),
+                "content": full,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            yield f"data: {json.dumps({'done': True})}\n\n"
+        except Exception as e:  # noqa: BLE001
+            yield f"data: {json.dumps({'error': f'{e.__class__.__name__}: {e}'})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable proxy buffering (nginx/railway)
+        },
+    )
+
+
+@app.route("/jobs/<job_id>/versions", methods=["GET"])
+def jobs_versions(job_id):
+    version = state["resume_versions"].get(job_id)
+    if not version:
+        return jsonify({"version": None})
+    return jsonify({"version": version})
+
+
 @app.route("/jobs/<job_id>/cover-letter", methods=["POST"])
 def jobs_cover_letter(job_id):
     err, status = _require_resume()
@@ -228,16 +277,38 @@ def jobs_cover_letter(job_id):
     return jsonify({"content": content, "format": "text"})
 
 
-@app.route("/jobs/<job_id>/gap", methods=["POST"])
-def jobs_gap(job_id):
+@app.route("/jobs/<job_id>/parse", methods=["POST"])
+def jobs_parse(job_id):
+    job, err, status = _get_job(job_id)
+    if err:
+        return err, status
+
+    if "parsed_jd" in job:
+        return jsonify(job["parsed_jd"])
+
+    description = job.get("description") or ""
+    parsed = parse_jd(description)
+    job["parsed_jd"] = parsed
+    return jsonify(parsed)
+
+
+@app.route("/jobs/<job_id>/ats", methods=["POST"])
+def jobs_ats(job_id):
     err, status = _require_resume()
     if err:
         return err, status
     job, err, status = _get_job(job_id)
     if err:
         return err, status
-    content = skill_gap(state["resume"]["raw_text"], job)
-    return jsonify({"content": content, "format": "markdown"})
+
+    if "ats" in job:
+        return jsonify({"parsed_jd": job.get("parsed_jd", {}), "ats": job["ats"]})
+
+    if "parsed_jd" not in job:
+        job["parsed_jd"] = parse_jd(job.get("description") or "")
+
+    job["ats"] = score_ats(job["parsed_jd"], state["resume"]["raw_text"])
+    return jsonify({"parsed_jd": job["parsed_jd"], "ats": job["ats"]})
 
 
 @app.route("/jobs/<job_id>/outreach", methods=["POST"])

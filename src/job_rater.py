@@ -6,19 +6,35 @@ import anthropic
 from config import ANTHROPIC_API_KEY, ANTHROPIC_MODEL
 from security import log_secret_status, sanitize_error, is_secret_set
 
-RATER_SYSTEM = """You are a career coach scoring how well a candidate's resume matches a job description.
+RATER_SYSTEM = """You are a strict ATS analyst. Score each job against the resume the way a hiring manager would: unsentimental, calibrated, no inflation.
+
 For each job, output a JSON object with:
-  - "id": the job id (copy from input)
-  - "score": integer 1-10 (10 = excellent fit, 1 = poor fit)
-  - "rationale": ONE sentence explaining the score
-  - "strengths": 1-3 short bullets of matching qualifications
-  - "gaps": 1-3 short bullets of missing or weak areas
+  - "id": copy from input
+  - "match": integer 0-100 (honest match percentage)
+  - "verdict": ONE short sentence (max 15 words) on the fit
+
+Scoring rules (apply strictly, in order):
+1. Identify the role's primary tech stack and seniority from title + description.
+2. If primary stack differs from the resume's demonstrated stack (e.g. React role vs Angular resume, backend role vs frontend resume, ML role vs pure web dev), cap match at 40 regardless of other overlap.
+3. If seniority is mismatched by more than one level (e.g. Staff role vs junior resume, or mid role vs principal), cap match at 55.
+4. If the resume is a clear on-stack, on-seniority fit, score 75-95 based on depth.
+5. Never score above 90 unless resume demonstrates exact role experience at the same seniority.
+6. Count synonyms as matches (React = ReactJS, AWS = Amazon Web Services).
+7. Be terse. Verdict must name the specific gap or strength driving the score.
+
+Calibration bands:
+- 85-100: direct hire, obvious fit
+- 70-84: strong candidate, minor gaps
+- 55-69: stretch, missing something real
+- 40-54: significant mismatch on stack or seniority
+- 0-39: wrong stack, wrong seniority, or wrong domain
 
 Return ONLY a JSON array of objects, no prose, no markdown fences."""
 
+BATCH_SIZE = 8
+
 
 def _extract_json_array(text: str):
-    """Pull the first JSON array out of a possibly-wrapped response."""
     text = text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL).strip()
@@ -32,8 +48,52 @@ def _extract_json_array(text: str):
         return []
 
 
+def _rate_batch(jobs: list[dict], resume_text: str, client) -> dict[str, dict]:
+    job_payload = [
+        {
+            "id": j["id"],
+            "title": j["title"],
+            "company": j["company"],
+            "location": j.get("location"),
+            "description": (j.get("description") or "")[:2500],
+        }
+        for j in jobs
+    ]
+
+    user_msg = (
+        f"Resume:\n{resume_text[:3500]}\n\n"
+        f"---\n\nJobs to score (array of {len(job_payload)}):\n{json.dumps(job_payload)}"
+    )
+
+    resp = client.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=4096,
+        temperature=0,
+        system=RATER_SYSTEM,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+
+    stop_reason = getattr(resp, "stop_reason", None)
+    if stop_reason == "max_tokens":
+        print(f"[JOB_RATER] ⚠️  Response hit max_tokens — batch of {len(jobs)} likely truncated")
+
+    ratings = _extract_json_array(resp.content[0].text)
+    print(f"[JOB_RATER] batch size={len(jobs)} parsed={len(ratings)} stop={stop_reason}")
+
+    out = {}
+    for r in ratings:
+        jid = r.get("id")
+        if not jid:
+            continue
+        out[jid] = {
+            "match": int(r.get("match", 0) or 0),
+            "verdict": r.get("verdict", ""),
+        }
+    return out
+
+
 def rate_jobs(jobs: list[dict], resume_text: str) -> dict[str, dict]:
-    """Return dict mapping job_id -> {score, rationale, strengths, gaps}."""
+    """Return dict mapping job_id -> {match, verdict}. Match is 0-100."""
     if not jobs:
         return {}
 
@@ -42,84 +102,26 @@ def rate_jobs(jobs: list[dict], resume_text: str) -> dict[str, dict]:
     print(f"[JOB_RATER] Model: {ANTHROPIC_MODEL}")
 
     if not is_secret_set(ANTHROPIC_API_KEY):
-        print("[JOB_RATER] ⚠️  API key is not set! Returning fallback ratings.")
-        # Fallback ratings when no API key — neutral 5s
         return {
-            j["id"]: {
-                "score": 5,
-                "rationale": "API key not set — rating unavailable.",
-                "strengths": [],
-                "gaps": [],
-            }
+            j["id"]: {"match": 0, "verdict": "API key not set."}
             for j in jobs
         }
 
-    job_payload = [
-        {
-            "id": j["id"],
-            "title": j["title"],
-            "company": j["company"],
-            "location": j.get("location"),
-            "description": (j.get("description") or "")[:1500],
-        }
-        for j in jobs
-    ]
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    out: dict[str, dict] = {}
 
-    user_msg = (
-        f"Resume:\n{resume_text[:3500]}\n\n"
-        f"---\n\nJobs to rate (array of {len(job_payload)}):\n{json.dumps(job_payload)}"
-    )
+    for i in range(0, len(jobs), BATCH_SIZE):
+        batch = jobs[i : i + BATCH_SIZE]
+        print(f"[JOB_RATER] Rating batch {i // BATCH_SIZE + 1} ({len(batch)} jobs)")
+        try:
+            out.update(_rate_batch(batch, resume_text, client))
+        except Exception as e:
+            print(f"[JOB_RATER] ❌ Batch error: {sanitize_error(e)}")
 
-    try:
-        print(f"[JOB_RATER] Calling Claude API...")
-        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-
-        resp = client.messages.create(
-            model=ANTHROPIC_MODEL,
-            max_tokens=2048,
-            system=RATER_SYSTEM,
-            messages=[{"role": "user", "content": user_msg}],
-        )
-
-        print(f"[JOB_RATER] ✓ API responded successfully")
-        ratings = _extract_json_array(resp.content[0].text)
-        print(f"[JOB_RATER] ✓ Extracted {len(ratings)} job ratings")
-
-    except Exception as e:
-        error_msg = sanitize_error(e)
-        print(f"[JOB_RATER] ❌ Error: {error_msg}")
-        # Fallback: return neutral ratings on error
-        return {
-            j["id"]: {
-                "score": 5,
-                "rationale": "Rating service temporarily unavailable.",
-                "strengths": ["Check job description for details"],
-                "gaps": ["Unable to analyze"],
-            }
-            for j in jobs
-        }
-
-    out = {}
-    for r in ratings:
-        jid = r.get("id")
-        if not jid:
-            continue
-        out[jid] = {
-            "score": r.get("score", 5),
-            "rationale": r.get("rationale", ""),
-            "strengths": r.get("strengths", []),
-            "gaps": r.get("gaps", []),
-        }
-
-    # For any job not rated, give fallback
     for j in jobs:
         if j["id"] not in out:
-            out[j["id"]] = {
-                "score": 5,
-                "rationale": "Rating could not be generated.",
-                "strengths": ["Review job description"],
-                "gaps": ["Unable to assess"],
-            }
+            out[j["id"]] = {"match": 0, "verdict": "Could not score this job."}
 
-    print(f"[JOB_RATER] ✓ Successfully rated {len(out)} jobs")
+    rated = sum(1 for j in jobs if out[j["id"]]["verdict"] != "Could not score this job.")
+    print(f"[JOB_RATER] ✓ Rated {rated}/{len(jobs)} jobs successfully")
     return out

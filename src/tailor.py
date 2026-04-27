@@ -18,6 +18,16 @@ quantified wherever the original had metrics, each starting with a strong verb)
 
 Only use facts from the candidate's resume. Do NOT invent experience."""
 
+TAILOR_STREAM_SYSTEM = """You are an expert resume writer. Rewrite the candidate's resume for a specific target role.
+
+CRITICAL RULES:
+1. Preserve overall structure: same sections, same companies, same dates, same schools.
+2. Rewrite bullets to surface keywords from the job description, but only where it is honest to do so.
+3. Never invent experience, skills, certifications, or metrics the candidate does not have.
+4. Output the FULL resume text, not just changed parts.
+5. Keep section headings on their own line in ALL CAPS (SUMMARY, EXPERIENCE, SKILLS, EDUCATION).
+6. Plain text only. No markdown, no commentary, no preamble, no explanation. Start directly with the candidate's name."""
+
 COVER_LETTER_SYSTEM = """You are an expert career writer. Write a concise, warm cover letter (max 280 words)
 for the candidate applying to the given role. Use facts only from the resume. Avoid clichés.
 Return plain text only — no markdown, no salutation placeholders like [Name]."""
@@ -55,6 +65,29 @@ def tailor_resume(resume_text: str, job: dict) -> str:
         f"Description:\n{(job.get('description') or '')[:3000]}"
     )
     return _call_claude(TAILOR_SYSTEM, payload, max_tokens=2000)
+
+
+def tailor_resume_stream(resume_text: str, job: dict):
+    """Generator that yields token chunks from Claude as they arrive."""
+    if not ANTHROPIC_API_KEY:
+        yield "Error: ANTHROPIC_API_KEY is not set."
+        return
+
+    payload = (
+        f"Target role: {job.get('title')} at {job.get('company')}\n\n"
+        f"Job Description:\n{(job.get('description') or '')[:3000]}\n\n"
+        f"---\n\nCandidate's current resume:\n{resume_text[:4500]}"
+    )
+
+    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    with client.messages.stream(
+        model=ANTHROPIC_MODEL,
+        max_tokens=3000,
+        system=TAILOR_STREAM_SYSTEM,
+        messages=[{"role": "user", "content": payload}],
+    ) as stream:
+        for text in stream.text_stream:
+            yield text
 
 
 def cover_letter(resume_text: str, job: dict) -> str:

@@ -6,6 +6,44 @@ from jobspy import scrape_jobs
 
 from config import JOB_SITES, JOB_RESULTS_WANTED, JOB_HOURS_OLD, JOB_COUNTRY
 
+# JobSpy's country_indeed picks which Indeed regional site to hit. If we leave
+# it at "USA", queries for Bengaluru/London/Toronto return nothing because we
+# are scraping the wrong Indeed. Infer from the location string.
+COUNTRY_KEYWORDS = {
+    "India": [
+        "india", "bengaluru", "bangalore", "mumbai", "delhi", "new delhi",
+        "hyderabad", "pune", "chennai", "noida", "gurgaon", "gurugram",
+        "kolkata", "ahmedabad", "kochi", "trivandrum", "thiruvananthapuram",
+        "jaipur", "chandigarh", "indore",
+    ],
+    "UK": [
+        "united kingdom", " uk", "london", "manchester", "birmingham",
+        "edinburgh", "glasgow", "bristol", "leeds", "cambridge", "oxford",
+    ],
+    "Canada": [
+        "canada", "toronto", "vancouver", "montreal", "ottawa", "calgary",
+        "edmonton", "winnipeg", "waterloo",
+    ],
+    "Australia": ["australia", "sydney", "melbourne", "brisbane", "perth", "adelaide"],
+    "Germany": ["germany", "berlin", "munich", "münchen", "frankfurt", "hamburg", "stuttgart", "cologne", "köln"],
+    "Singapore": ["singapore"],
+    "Ireland": ["ireland", "dublin"],
+    "Netherlands": ["netherlands", "amsterdam", "rotterdam", "utrecht"],
+    "France": ["france", "paris", "lyon", "toulouse"],
+    "Spain": ["spain", "madrid", "barcelona"],
+    "UAE": ["uae", "united arab emirates", "dubai", "abu dhabi"],
+}
+
+
+def infer_country(location: str) -> str:
+    if not location:
+        return JOB_COUNTRY
+    loc = f" {location.lower()} "
+    for country, keywords in COUNTRY_KEYWORDS.items():
+        if any(kw in loc for kw in keywords):
+            return country
+    return JOB_COUNTRY
+
 
 def _clean(value) -> Optional[str]:
     """Convert pandas NaN / None / empty to None; stringify otherwise."""
@@ -38,14 +76,19 @@ def search_jobs(
     if sites is None:
         sites = JOB_SITES
 
+    country = infer_country(location)
+    google_search = (
+        f"{query} jobs in {location}" if location else f"{query} jobs"
+    )
+
     df = scrape_jobs(
         site_name=sites,
         search_term=query,
-        google_search_term=f"{query} jobs near {location}" if location else f"{query} jobs",
+        google_search_term=google_search,
         location=location or None,
         results_wanted=results_wanted,
         hours_old=hours_old,
-        country_indeed=JOB_COUNTRY,
+        country_indeed=country,
         is_remote=is_remote,
         description_format="markdown",
         verbose=0,
